@@ -1,0 +1,92 @@
+﻿name: Run All Security and E2E Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend-verification:
+    name: Backend verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install backend requirements
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
+      - name: Run backend verification runner
+        run: python run_tests.py
+      - name: Upload backend verification artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-verification-report
+          path: test_verification_report.txt
+
+  dependency-scan:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit
+      - name: Run pip dependency audit
+        run: |
+          python -m pip-audit --output dependency-report.txt || true
+      - name: Upload dependency report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-report
+          path: dependency-report.txt
+
+  selenium-tests:
+    name: Selenium E2E tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+      - name: Install Selenium test dependencies
+        working-directory: selenium-tests
+        run: npm install
+      - name: Run Selenium test runner
+        working-directory: selenium-tests
+        run: npm test
+      - name: Upload Selenium Excel report
+        uses: actions/upload-artifact@v4
+        with:
+          name: selenium-test-report
+          path: selenium-tests/test-results/**/*.xlsx
+
+  appium-tests:
+    name: Appium E2E tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+      - name: Install Appium test dependencies
+        working-directory: appium-tests
+        run: npm install
+      - name: Run Appium test runner
+        working-directory: appium-tests
+        run: npm test
+      - name: Upload Appium Excel report
+        uses: actions/upload-artifact@v4
+        with:
+          name: appium-test-report
+          path: appium-tests/test-results/**/*.xlsx
