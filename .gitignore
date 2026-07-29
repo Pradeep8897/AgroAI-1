@@ -44,6 +44,13 @@ htmlcov/
 test/
 test_verification_report.txt
 
+# Local test artifacts
+appium-tests/test-results/
+selenium-tests/test-results/
+
+# Android local build state
+android/.gradle/
+
 # Translations
 *.mo
 *.pot

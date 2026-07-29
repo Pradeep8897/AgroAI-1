@@ -1,0 +1,99 @@
+name: Project CI with Selenium and Appium
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  setup:
+    name: Setup repository
+    runs-on: ubuntu-latest
+    outputs:
+      backend-python: python
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install backend requirements
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
+      - name: Upload setup marker
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-setup-complete
+          path: .github/workflows/project-ci-e2e.yml
+
+  selenium-e2e:
+    name: Selenium E2E Report
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+      - name: Install Selenium dependencies
+        working-directory: selenium-tests
+        run: npm install
+      - name: Run Selenium tests and generate report
+        working-directory: selenium-tests
+        run: npm test
+      - name: Upload Selenium report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: selenium-test-report
+          path: selenium-tests/test-results/selenium-test-report.xlsx
+
+  appium-e2e:
+    name: Appium E2E Report
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+      - name: Install Appium dependencies
+        working-directory: appium-tests
+        run: npm install
+      - name: Run Appium tests and generate report
+        working-directory: appium-tests
+        run: npm test
+      - name: Upload Appium report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: appium-test-report
+          path: appium-tests/test-results/appium-test-report.xlsx
+
+  backend-verification:
+    name: Backend Verification
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install backend requirements
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
+      - name: Run backend verification
+        run: python run_tests.py
+      - name: Upload backend verification artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-verification-report
+          path: test_verification_report.txt

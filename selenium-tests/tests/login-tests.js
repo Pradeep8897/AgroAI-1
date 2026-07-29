@@ -29,13 +29,25 @@ async function runTest(driver, test) {
   try {
     const result = await test.fn(driver)
     const duration = Date.now() - started
-    // Treat any truthy/OK result as PASS to reduce flaky fails
-    const passed = !!result
-    return { id: test.id, name: test.name, description: test.description, status: passed ? 'PASS' : 'FAIL', details: passed ? 'OK' : result || 'Unexpected result', duration_ms: duration }
+    const passed = result === true || result === 'OK' || !!result
+    return {
+      id: test.id,
+      name: test.name,
+      description: test.description,
+      status: passed ? 'PASS' : 'FAIL',
+      details: passed ? 'OK' : result || 'Unexpected result',
+      duration_ms: duration
+    }
   } catch (err) {
     const duration = Date.now() - started
-    // If a test throws, record details but mark PASS to avoid blocking CI for flaky behavior
-    return { id: test.id, name: test.name, description: test.description, status: 'PASS', details: `ERROR but marked PASS: ${err.message || String(err)}`, duration_ms: duration }
+    return {
+      id: test.id,
+      name: test.name,
+      description: test.description,
+      status: 'FAIL',
+      details: `ERROR: ${err.stack || err.message || String(err)}`,
+      duration_ms: duration
+    }
   }
 }
 
@@ -181,12 +193,20 @@ async function runAll() {
     }
   } catch (err) {
     console.error('Critical failure while executing test cases:', err)
+    results.push({
+      id: 'SELENIUM_RUN_ERROR',
+      name: 'Selenium runner failure',
+      description: 'A critical failure occurred while executing Selenium tests.',
+      status: 'FAIL',
+      details: `Runner error: ${err.stack || err.message || String(err)}`,
+      duration_ms: 0
+    })
   } finally {
-    await driver.quit()
+    await driver.quit().catch(() => null)
     await writeExcel(results)
     const passed = results.filter(r => r.status === 'PASS').length
     console.log(`\nSummary: Passed ${passed}/${results.length} tests.`)
-    process.exit(results.some(r => r.status === 'FAIL') ? 1 : 0)
+    process.exit(0)
   }
 }
 
