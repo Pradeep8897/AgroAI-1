@@ -1,7 +1,8 @@
 from flask import Blueprint, request, jsonify
-from models.market import MarketModel
+from backend.models.market import MarketModel
+from backend.utils.jwt_handler import require_auth
 import os
-import pickle
+import joblib
 import random
 from datetime import datetime, timedelta
 
@@ -13,8 +14,7 @@ market_model = None
 
 try:
     if os.path.exists(market_model_path):
-        with open(market_model_path, "rb") as f:
-            market_model = pickle.load(f)
+        market_model = joblib.load(market_model_path)
         print("Scikit-Learn market_model.pkl loaded successfully!")
 except Exception as e:
     print(f"Error loading market model: {e}")
@@ -55,6 +55,7 @@ def get_prices():
     })
 
 @market_bp.route('/api/market/predict', methods=['POST'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def predict_price():
     data = request.get_json() or {}
     crop = data.get('crop', 'Tomato')

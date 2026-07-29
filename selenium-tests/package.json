@@ -1,0 +1,13 @@
+{
+  "name": "agroai-selenium-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/login-tests.js"
+  },
+  "dependencies": {
+    "chromedriver": "^118.0.1",
+    "selenium-webdriver": "^4.46.0"
+  }
+}

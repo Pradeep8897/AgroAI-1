@@ -1,20 +1,42 @@
 import os
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-
+from backend.extensions import limiter
+from backend.utils.jwt_handler import require_auth
 # Import database initializer
-from database.mysql_connection import init_db, get_connection
+from backend.database.mysql_connection import init_db, get_connection
 
 # Import Blueprints
-from routes.auth import auth_bp
-from routes.crop import crop_bp
-from routes.disease import disease_bp
-from routes.market import market_bp
-from routes.profit import profit_bp
-from routes.assistant import assistant_bp
-from routes.admin import admin_bp
-from routes.notification import notification_bp
+from backend.routes.auth import auth_bp
+from backend.routes.crop import crop_bp
+from backend.routes.disease import disease_bp
+from backend.routes.market import market_bp
+from backend.routes.profit import profit_bp
+from backend.routes.assistant import assistant_bp
+from backend.routes.admin import admin_bp
+from backend.routes.notification import notification_bp
 app = Flask(__name__)
+
+# CORS Configuration
+# Read allowed origins from environment but sanitize wildcards to prevent open CORS
+allowed_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "http://127.0.0.1:5173").split(",")
+# Prevent a wildcard '*' from being used accidentally in production
+if any(o.strip() == '*' for o in allowed_origins):
+    # Replace wildcard with a safe default (localhost dev origin)
+    allowed_origins = [os.environ.get('CORS_SAFE_DEFAULT', 'http://127.0.0.1:5173')]
+CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
+
+# Initialize rate limiter
+limiter.init_app(app)
+
+@app.after_request
+def set_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    response.headers.setdefault("Content-Security-Policy", "default-src 'self'")
+    return response
 
 @app.route("/")
 def home():
@@ -22,9 +44,6 @@ def home():
         "status": "success",
         "message": "AgroAI Backend Running"
     }
-
-# Enable CORS for frontend running on localhost:5173 or others
-CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # Ensure upload directory exists (Use /tmp on Vercel)
 if os.environ.get("VERCEL") == "1":
@@ -74,6 +93,7 @@ def list_equipment():
         conn.close()
 
 @app.route('/api/equipment', methods=['POST'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def add_equipment():
     data = request.get_json() or {}
     name = data.get('name')
@@ -115,9 +135,10 @@ def add_equipment():
         conn.close()
 
 @app.route('/api/equipment/book', methods=['POST'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def book_equipment():
     data = request.get_json() or {}
-    user_id = data.get('user_id')
+    user_id = request.user_id
     equipment_id = data.get('equipment_id')
     hours = int(data.get('hours', 1))
     booking_date = data.get('date', '')
@@ -170,8 +191,9 @@ def book_equipment():
         conn.close()
 
 @app.route('/api/equipment/history', methods=['GET'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def booking_history():
-    user_id = request.args.get('user_id', 0)
+    user_id = request.user_id
     conn, is_sqlite = get_connection()
     cursor = conn.cursor()
     try:
@@ -232,9 +254,10 @@ def list_products():
         conn.close()
 
 @app.route('/api/products/order', methods=['POST'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def place_order():
     data = request.get_json() or {}
-    user_id = data.get('user_id')
+    user_id = request.user_id
     product_id = data.get('product_id')
     qty = int(data.get('quantity', 1))
     address = data.get('address', 'Direct Farm Delivery')
@@ -287,8 +310,9 @@ def place_order():
         conn.close()
 
 @app.route('/api/products/orders', methods=['GET'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def order_history():
-    user_id = request.args.get('user_id', 0)
+    user_id = request.user_id
     conn, is_sqlite = get_connection()
     cursor = conn.cursor()
     try:
@@ -380,6 +404,7 @@ def get_listings():
 
 
 @app.route('/api/listings', methods=['POST'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def create_listing():
     data = request.get_json() or {}
     category = data.get('category')
@@ -390,7 +415,7 @@ def create_listing():
     location = data.get('location')
     quantity = data.get('quantity')
     phone = data.get('phone')
-    user_id = data.get('user_id')
+    user_id = request.user_id
     
     if not category or not title or price is None or not location or not quantity or not phone:
         return jsonify({"success": False, "message": "Missing required listing parameters."}), 400
@@ -423,7 +448,9 @@ def create_listing():
 
 # Serves uploaded files (like plant leaf snaps)
 @app.route('/api/uploads/<filename>')
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def uploaded_file(filename):
+    # Require authenticated users to download uploaded files
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
@@ -435,6 +462,7 @@ def health():
 
 # Seeding utility trigger
 @app.route('/api/db/init', methods=['POST'])
+@require_auth(allowed_roles=['admin'])
 def run_init_db():
     try:
         init_db()

@@ -1,4 +1,4 @@
-from database.mysql_connection import get_connection
+from backend.database.mysql_connection import get_connection
 
 class DiseaseModel:
     @staticmethod

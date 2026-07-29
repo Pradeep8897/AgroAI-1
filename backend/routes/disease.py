@@ -1,12 +1,21 @@
 from flask import Blueprint, request, jsonify, current_app
-from models.disease import DiseaseModel
+from backend.models.disease import DiseaseModel
+from backend.utils.jwt_handler import require_auth
 import os
-import pickle
+import joblib
 import random
 import numpy as np
 from PIL import Image
 from werkzeug.utils import secure_filename
 import uuid
+
+ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.gif'}
+MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024
+
+
+def is_allowed_file(filename):
+    _, extension = os.path.splitext(filename.lower())
+    return extension in ALLOWED_IMAGE_EXTENSIONS
 
 disease_bp = Blueprint('disease', __name__)
 
@@ -16,8 +25,7 @@ disease_model = None
 
 try:
     if os.path.exists(disease_model_path):
-        with open(disease_model_path, "rb") as f:
-            disease_model = pickle.load(f)
+        disease_model = joblib.load(disease_model_path)
         print("Scikit-Learn disease_model.pkl loaded successfully!")
 except Exception as e:
     print(f"Error loading disease model: {e}")
@@ -32,16 +40,30 @@ DISEASE_LIST = [
 ]
 
 @disease_bp.route('/api/disease/detect', methods=['POST'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def detect_disease():
+    # Extract user_id from verified JWT token, not from request
+    user_id = request.user_id
+    
     # Verify file upload
     if 'image' not in request.files:
         return jsonify({"success": False, "message": "No image file uploaded."}), 400
 
     image_file = request.files['image']
-    user_id = request.form.get('user_id', 0)
     
     if image_file.filename == '':
         return jsonify({"success": False, "message": "No selected file."}), 400
+
+    # Validate upload file type and size
+    if not is_allowed_file(image_file.filename):
+        return jsonify({"success": False, "message": "Unsupported file type. Allowed types: jpg, jpeg, png, bmp, gif."}), 400
+
+    content_length = request.content_length
+    if content_length and content_length > MAX_UPLOAD_SIZE_BYTES:
+        return jsonify({"success": False, "message": "Uploaded file exceeds maximum allowed size of 5 MB."}), 400
+
+    if image_file.mimetype and not image_file.mimetype.startswith('image/'):
+        return jsonify({"success": False, "message": "Uploaded file must be an image."}), 400
 
     # Save image to upload folder
     orig_filename = secure_filename(image_file.filename)
@@ -157,8 +179,9 @@ def detect_disease():
     })
 
 @disease_bp.route('/api/disease/reports', methods=['GET'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def get_reports():
-    user_id = request.args.get('user_id', 0)
+    user_id = request.user_id  # Extract from verified JWT token
     reports = DiseaseModel.get_reports_by_user(user_id)
     return jsonify({
         "success": True,

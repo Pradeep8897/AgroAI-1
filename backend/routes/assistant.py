@@ -1,4 +1,6 @@
 from flask import Blueprint, request, jsonify
+from backend.extensions import limiter
+from backend.utils.jwt_handler import require_auth
 import random
 from datetime import datetime
 
@@ -42,6 +44,8 @@ DEFAULT_RESPONSES = [
 ]
 
 @assistant_bp.route('/api/assistant/chat', methods=['POST'])
+@limiter.limit("30 per minute")
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def chat():
     data = request.get_json() or {}
     message = data.get('message', '').lower().strip()

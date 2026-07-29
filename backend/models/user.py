@@ -1,4 +1,4 @@
-from database.mysql_connection import get_connection
+from backend.database.mysql_connection import get_connection
 from werkzeug.security import generate_password_hash, check_password_hash
 
 class UserModel:
@@ -102,6 +102,24 @@ class UserModel:
             return True
         except Exception as e:
             print(f"Error updating user: {e}")
+            return False
+        finally:
+            conn.close()
+
+    @staticmethod
+    def update_password(user_id, new_password):
+        conn, is_sqlite = get_connection()
+        cursor = conn.cursor()
+        hashed = generate_password_hash(new_password)
+        try:
+            if is_sqlite:
+                cursor.execute("UPDATE users SET password = ? WHERE id = ?", (hashed, user_id))
+            else:
+                cursor.execute("UPDATE users SET password = %s WHERE id = %s", (hashed, user_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error updating password: {e}")
             return False
         finally:
             conn.close()

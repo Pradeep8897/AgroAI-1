@@ -1,9 +1,45 @@
 from flask import Blueprint, request, jsonify
-from database.mysql_connection import get_connection
+from werkzeug.security import check_password_hash
+from backend.models.user import UserModel
+from backend.utils.jwt_handler import JWTHandler, require_auth
+from backend.extensions import limiter
+from backend.database.mysql_connection import get_connection
 
 admin_bp = Blueprint('admin', __name__)
 
+@admin_bp.route("/api/admin/login", methods=["POST"])
+@limiter.limit("5 per minute")
+def admin_login():
+    data = request.get_json() or {}
+    email = data.get("email")
+    password = data.get("password")
+
+    if not email or not password:
+        return jsonify({
+            "success": False,
+            "message": "Email and password are required."
+        }), 400
+
+    user = UserModel.get_user_by_email(email)
+    if not user or user.get("role") != "admin" or not check_password_hash(user["password"], password):
+        return jsonify({
+            "success": False,
+            "message": "Invalid admin credentials"
+        }), 401
+
+    token = JWTHandler.generate_token(
+        user_id=user["id"],
+        email=user["email"],
+        role=user["role"]
+    )
+
+    return jsonify({
+        "success": True,
+        "token": token
+    })
+
 @admin_bp.route('/api/admin/stats', methods=['GET'])
+@require_auth(allowed_roles=['admin'])
 def get_stats():
     conn, is_sqlite = get_connection()
     cursor = conn.cursor()

@@ -1,8 +1,9 @@
 from flask import Blueprint, request, jsonify
-from models.crop import CropModel
+from backend.models.crop import CropModel
+from backend.utils.jwt_handler import require_auth
 import math
 import os
-import pickle
+import joblib
 from datetime import datetime, timedelta
 
 crop_bp = Blueprint('crop', __name__)
@@ -27,8 +28,7 @@ crop_model = None
 
 try:
     if os.path.exists(crop_model_path):
-        with open(crop_model_path, "rb") as f:
-            crop_model = pickle.load(f)
+        crop_model = joblib.load(crop_model_path)
         print("Scikit-Learn crop_model.pkl loaded successfully!")
 except Exception as e:
     print(f"Error loading crop model: {e}")
@@ -55,10 +55,11 @@ def calculate_suitability(inputs, profile):
     return round(similarity, 1)
 
 @crop_bp.route('/api/crop/recommend', methods=['POST'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def recommend_crop():
     data = request.get_json() or {}
+    user_id = request.user_id  # Extract from verified JWT token, not from request data
     try:
-        user_id = data.get('user_id', 0)
         N = float(data.get('N', 0))
         P = float(data.get('P', 0))
         K = float(data.get('K', 0))
@@ -118,6 +119,7 @@ def recommend_crop():
     })
 
 @crop_bp.route('/api/crop/fertilizer', methods=['POST'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def recommend_fertilizer():
     data = request.get_json() or {}
     target_crop = data.get('crop', 'Rice')
@@ -187,6 +189,7 @@ def recommend_fertilizer():
     })
 
 @crop_bp.route('/api/crop/calendar', methods=['POST'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def get_calendar():
     data = request.get_json() or {}
     crop_name = data.get('crop', 'Rice')
@@ -247,8 +250,9 @@ def get_calendar():
     })
 
 @crop_bp.route('/api/crop/history', methods=['GET'])
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def get_crop_history():
-    user_id = request.args.get('user_id', 0)
+    user_id = request.user_id
     history = CropModel.get_history_by_user(user_id)
     return jsonify({
         "success": True,

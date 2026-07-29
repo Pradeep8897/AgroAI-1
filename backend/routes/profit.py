@@ -1,8 +1,12 @@
 from flask import Blueprint, request, jsonify
+from backend.extensions import limiter
+from backend.utils.jwt_handler import require_auth
 
 profit_bp = Blueprint('profit', __name__)
 
 @profit_bp.route('/api/profit/optimize', methods=['POST'])
+@limiter.limit("20 per minute")
+@require_auth(allowed_roles=['user', 'farmer', 'expert', 'admin'])
 def optimize_profit():
     data = request.get_json() or {}
     

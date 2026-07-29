@@ -108,6 +108,7 @@ def run_tests(base_url):
 
     # Test 7: Crop Recommendation Model
     try:
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
         r = session.post(f"{base_url}/api/crop/recommend", json={
             "user_id": user_id or 1,
             "N": 90,
@@ -117,11 +118,11 @@ def run_tests(base_url):
             "temp": 24.6,
             "humidity": 70.2,
             "rainfall": 85.0
-        })
+        }, headers=headers)
         if r.status_code == 200 and r.json().get('success') is True:
             report_result("Crop Recommend (POST /api/crop/recommend)", True, f"Recommended: {r.json().get('top_recommendation')} (Score: {r.json().get('score')})")
         else:
-            report_result("Crop Recommend (POST /api/crop/recommend)", False, f"Status: {r.status_code}")
+            report_result("Crop Recommend (POST /api/crop/recommend)", False, f"Status: {r.status_code}, Body: {r.text}")
     except Exception as e:
         report_result("Crop Recommend (POST /api/crop/recommend)", False, str(e))
 
