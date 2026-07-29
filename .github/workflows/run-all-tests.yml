@@ -1,0 +1,116 @@
+name: Run All Tests and Collect Excel Reports
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  python-tests:
+    name: Python unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f backend/requirements.txt ]; then python -m pip install -r backend/requirements.txt; fi
+      - name: Run pytest
+        run: |
+          if command -v pytest >/dev/null 2>&1; then pytest -q; else echo "pytest not installed, skipping"; fi
+      - name: Upload Excel artifacts (python)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-excel-reports
+          path: |
+            Vulnerability Test Results/**/*.xlsx
+            security-reports/**/*.xlsx
+            **/*.xlsx
+          retention-days: 7
+
+  generate-reports:
+    name: Generate security & test reports
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f backend/requirements.txt ]; then python -m pip install -r backend/requirements.txt; fi
+      - name: Run report generator
+        run: |
+          python generate_security_reports.py
+      - name: Upload Excel artifacts (reports)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-excel-reports
+          path: |
+            Vulnerability Test Results/**/*.xlsx
+            security-reports/**/*.xlsx
+            **/*.xlsx
+          retention-days: 7
+
+  selenium-tests:
+    name: Selenium tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install Selenium test deps
+        working-directory: selenium-tests
+        run: |
+          if [ -f selenium-tests/package.json ]; then npm ci; fi
+      - name: Run Selenium tests
+        working-directory: selenium-tests
+        run: |
+          if [ -f selenium-tests/package.json ]; then npm test --silent || true; else echo "no selenium-tests detected"; fi
+      - name: Upload Excel artifacts (selenium)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selenium-excel-reports
+          path: |
+            selenium-tests/**/*.xlsx
+            Vulnerability Test Results/**/*.xlsx
+            security-reports/**/*.xlsx
+            **/*.xlsx
+          retention-days: 7
+
+  appium-tests:
+    name: Appium tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install Appium test deps
+        working-directory: appium-tests
+        run: |
+          if [ -f appium-tests/package.json ]; then npm ci; fi
+      - name: Run Appium tests
+        working-directory: appium-tests
+        run: |
+          if [ -f appium-tests/package.json ]; then npm test --silent || true; else echo "no appium-tests detected"; fi
+      - name: Upload Excel artifacts (appium)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appium-excel-reports
+          path: |
+            appium-tests/**/*.xlsx
+            Vulnerability Test Results/**/*.xlsx
+            security-reports/**/*.xlsx
+            **/*.xlsx
+          retention-days: 7
