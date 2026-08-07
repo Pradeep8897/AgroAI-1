@@ -29,7 +29,7 @@ def _parse_user_id_from_token(token):
 
 def _serialize_user(user):
     return {
-        "id": user.id,
+        "id": str(user.id) if user.id else None,
         "username": user.username,
         "email": user.email,
         "role": user.role,
@@ -107,7 +107,7 @@ def register():
         return jsonify({
             "success": True,
             "message": "User registered successfully.",
-            "user": {"id": user.id, "username": user.username, "email": user.email, "role": user.role},
+            "user": {"id": str(user.id), "username": user.username, "email": user.email, "role": user.role},
         }), 201
     except Exception as error:
         db.session.rollback()
@@ -142,7 +142,7 @@ def login():
         "message": "Login successful.",
         "token": token,
         "user": {
-            "id": user.id,
+            "id": str(user.id),
             "username": user.username,
             "email": user.email,
             "role": user.role,

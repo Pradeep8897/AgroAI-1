@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -25,6 +26,17 @@ from routes.notification import notification_bp
 app = Flask(__name__)
 
 logging.basicConfig(level=logging.INFO)
+
+# Helper function to parse UUID safely
+def parse_uuid(val):
+    if not val:
+        return None
+    if isinstance(val, uuid.UUID):
+        return val
+    try:
+        return uuid.UUID(str(val))
+    except (ValueError, AttributeError, TypeError):
+        return None
 
 init_database(app)
 with app.app_context():
@@ -132,12 +144,13 @@ def add_equipment():
 @app.route('/api/equipment/book', methods=['POST'])
 def book_equipment():
     data = request.get_json() or {}
-    user_id = data.get('user_id')
+    raw_user_id = data.get('user_id')
+    user_id = parse_uuid(raw_user_id)
     equipment_id = data.get('equipment_id')
     hours = data.get('hours', 1)
     booking_date = data.get('date', '')
 
-    if not user_id or not equipment_id or not booking_date:
+    if not equipment_id or not booking_date:
         return jsonify({"success": False, "message": "Missing booking parameters."}), 400
 
     try:
@@ -177,18 +190,21 @@ def book_equipment():
 
 @app.route('/api/equipment/history', methods=['GET'])
 def booking_history():
-    user_id = request.args.get('user_id')
+    raw_user_id = request.args.get('user_id')
+    user_id = parse_uuid(raw_user_id)
     try:
+        query = Booking.query
+        if user_id:
+            query = query.filter_by(user_id=user_id)
         bookings = (
-            Booking.query
-            .filter_by(user_id=user_id)
-            .join(Equipment, Booking.equipment_id == Equipment.id)
+            query.outerjoin(Equipment, Booking.equipment_id == Equipment.id)
             .order_by(Booking.created_at.desc())
             .all()
         )
         history = [
             {
                 "id": booking.id,
+                "user_id": str(booking.user_id) if booking.user_id else None,
                 "equipment_name": booking.equipment.name if booking.equipment else None,
                 "type": booking.equipment.type if booking.equipment else None,
                 "hours": booking.hours,
@@ -228,13 +244,14 @@ def list_products():
 @app.route('/api/products/order', methods=['POST'])
 def place_order():
     data = request.get_json() or {}
-    user_id = data.get('user_id')
+    raw_user_id = data.get('user_id')
+    user_id = parse_uuid(raw_user_id)
     product_id = data.get('product_id')
     qty = data.get('quantity', 1)
     address = data.get('address', 'Direct Farm Delivery')
 
-    if not user_id or not product_id:
-        return jsonify({"success": False, "message": "Missing product or user details."}), 400
+    if not product_id:
+        return jsonify({"success": False, "message": "Missing product details."}), 400
 
     try:
         qty = int(qty)
@@ -273,18 +290,21 @@ def place_order():
 
 @app.route('/api/products/orders', methods=['GET'])
 def order_history():
-    user_id = request.args.get('user_id')
+    raw_user_id = request.args.get('user_id')
+    user_id = parse_uuid(raw_user_id)
     try:
+        query = Order.query
+        if user_id:
+            query = query.filter_by(user_id=user_id)
         orders = (
-            Order.query
-            .filter_by(user_id=user_id)
-            .join(Product, Order.product_id == Product.id)
+            query.outerjoin(Product, Order.product_id == Product.id)
             .order_by(Order.created_at.desc())
             .all()
         )
         response = [
             {
                 "id": order.id,
+                "user_id": str(order.user_id) if order.user_id else None,
                 "product_name": order.product.name if order.product else None,
                 "quantity": order.quantity,
                 "total_cost": float(order.total_cost or 0.0),
@@ -324,14 +344,14 @@ def get_listings():
         data = [
             {
                 "id": listing.id,
-                "user_id": listing.user_id,
+                "user_id": str(listing.user_id) if listing.user_id else None,
                 "category": listing.category,
                 "title": listing.title,
                 "description": listing.description,
                 "price": float(listing.price or 0.0),
                 "unit": listing.unit,
                 "location": listing.location,
-                "quantity": listing.quantity,
+                "quantity": str(listing.quantity or ""),
                 "phone": listing.phone,
                 "created_at": listing.created_at.isoformat() if listing.created_at else None,
             }
@@ -354,9 +374,10 @@ def create_listing():
     location = data.get('location')
     quantity = data.get('quantity')
     phone = data.get('phone')
-    user_id = data.get('user_id')
+    raw_user_id = data.get('user_id')
+    user_id = parse_uuid(raw_user_id)
     
-    if not category or not title or price is None or not location or not quantity or not phone:
+    if not category or not title or price is None or not location or quantity is None or not phone:
         return jsonify({"success": False, "message": "Missing required listing parameters."}), 400
         
     try:
@@ -373,7 +394,7 @@ def create_listing():
             price=price,
             unit=unit,
             location=location,
-            quantity=quantity,
+            quantity=str(quantity),
             phone=phone,
         )
         db.session.add(listing)
@@ -391,14 +412,10 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
-
 # Root check
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({"success": True, "status": "healthy", "service": "AgroAI Backend API"})
-
-# Seeding utility trigger
-
 
 
 if __name__ == "__main__":
