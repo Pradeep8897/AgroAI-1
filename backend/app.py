@@ -28,7 +28,10 @@ logging.basicConfig(level=logging.INFO)
 
 init_database(app)
 with app.app_context():
-    db.create_all()
+    try:
+        db.create_all()
+    except Exception as e:
+        app.logger.warning(f"Startup create_all skipped or deferred: {e}")
 
 @app.route("/")
 def home():
