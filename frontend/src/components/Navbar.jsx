@@ -1,15 +1,33 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth, useCart } from '../App'
+import { API_BASE } from '../services/apiConfig'
 import { Leaf, ShoppingCart, Bell, User, Menu, X, LogOut, ChevronDown } from 'lucide-react'
 
 export default function Navbar() {
   const { user, logout, isLoggedIn } = useAuth()
   const { cartCount } = useCart()
+  const [totalUsers, setTotalUsers] = useState(null)
   const navigate = useNavigate()
   const location = useLocation()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  useEffect(() => {
+    async function fetchUserCount() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/stats`)
+        const data = await res.json()
+        if (data.success && data.metrics) {
+          setTotalUsers(data.metrics.total_users)
+        }
+      } catch (err) {
+        setTotalUsers(null)
+      }
+    }
+
+    fetchUserCount()
+  }, [])
 
   const handleLogout = () => {
     logout()
@@ -65,7 +83,13 @@ export default function Navbar() {
                 <div style={styles.avatar}>
                   {user?.username?.[0]?.toUpperCase() || 'U'}
                 </div>
-                <span style={styles.username}>{user?.username || 'User'}</span>
+                <div>
+                  <span style={styles.username}>{user?.username || 'User'}</span>
+                  <span style={styles.userCount}>ID: {user?.id || 'N/A'}</span>
+                  {typeof totalUsers === 'number' && (
+                    <span style={styles.userCount}>Total users: {totalUsers}</span>
+                  )}
+                </div>
                 <ChevronDown size={14} style={{ transition: 'transform 0.2s', transform: dropdownOpen ? 'rotate(180deg)' : 'none' }} />
               </button>
 
@@ -218,7 +242,12 @@ const styles = {
   username: {
     fontSize: '0.875rem',
     fontWeight: 600,
-    color: 'var(--text-primary)',
+  },
+  userCount: {
+    display: 'block',
+    fontSize: '0.75rem',
+    color: 'var(--text-secondary)',
+    marginTop: 2,
   },
   dropdown: {
     position: 'absolute',

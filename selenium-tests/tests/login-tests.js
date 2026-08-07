@@ -204,9 +204,10 @@ async function runAll() {
   } finally {
     await driver.quit().catch(() => null)
     await writeExcel(results)
+    const failed = results.filter(r => r.status === 'FAIL').length
     const passed = results.filter(r => r.status === 'PASS').length
-    console.log(`\nSummary: Passed ${passed}/${results.length} tests.`)
-    process.exit(0)
+    console.log(`\nSummary: Passed ${passed}/${results.length} tests. Failed ${failed}/${results.length} tests.`)
+    process.exit(failed > 0 ? 1 : 0)
   }
 }
 

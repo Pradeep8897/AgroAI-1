@@ -38,7 +38,7 @@ def detect_disease():
         return jsonify({"success": False, "message": "No image file uploaded."}), 400
 
     image_file = request.files['image']
-    user_id = request.form.get('user_id', 0)
+    user_id = request.form.get('user_id')
     
     if image_file.filename == '':
         return jsonify({"success": False, "message": "No selected file."}), 400
@@ -158,7 +158,7 @@ def detect_disease():
 
 @disease_bp.route('/api/disease/reports', methods=['GET'])
 def get_reports():
-    user_id = request.args.get('user_id', 0)
+    user_id = request.args.get('user_id')
     reports = DiseaseModel.get_reports_by_user(user_id)
     return jsonify({
         "success": True,

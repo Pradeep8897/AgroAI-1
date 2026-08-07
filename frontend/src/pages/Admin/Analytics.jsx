@@ -28,9 +28,9 @@ export default function Analytics() {
 
   const metricItems = metrics ? [
     { icon: Users2, title: 'Registered Farmers', value: metrics.total_users },
-    { icon: Leaf, title: 'Crops Tracked', value: metrics.total_crops_logged },
-    { icon: Activity, title: 'Disease Scans', value: metrics.total_diseases_scanned },
-    { icon: Layers, title: 'Total Bookings', value: metrics.total_bookings },
+    { icon: Activity, title: 'Online Sessions', value: metrics.online_users },
+    { icon: Layers, title: 'Total Login Attempts', value: metrics.total_login_attempts },
+    { icon: ShieldAlert, title: 'Successful Logins', value: metrics.successful_logins },
   ] : []
 
   return (
@@ -81,31 +81,31 @@ export default function Analytics() {
           {/* Revenue Breakdown */}
           <div className="card">
             <h3 style={{ fontSize: '1.1rem', color: 'var(--text-primary)', marginBottom: 16, borderBottom: '1px solid var(--border-subtle)', paddingBottom: 12 }}>
-              💰 Revenue Breakdown
+              � Login Metrics
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
               <div style={styles.revenueBox}>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Equipment Rental Revenue</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Failed Login Attempts</div>
                 <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--color-primary-dark)', marginTop: 4 }}>
-                  ₹{metrics.booking_revenue.toLocaleString()}
+                  {metrics.failed_logins.toLocaleString()}
                 </div>
               </div>
-              
+
               <div style={styles.revenueBox}>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Product Sales Revenue</div>
-                <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--color-primary-dark)', marginTop: 4 }}>
-                  ₹{metrics.order_revenue.toLocaleString()}
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Last Successful Login</div>
+                <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-primary-dark)', marginTop: 4, whiteSpace: 'pre-wrap' }}>
+                  {metrics.last_login_time || 'No successful logins yet'}
                 </div>
               </div>
-              
+
               <div style={{ 
                 ...styles.revenueBox, 
                 background: 'var(--color-primary-glow)', 
                 border: '1.5px solid var(--color-primary-light)' 
               }}>
-                <div style={{ fontSize: '0.82rem', color: 'var(--color-primary-dark)', fontWeight: 600 }}>Total Platform Revenue</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--color-primary-dark)', fontWeight: 600 }}>Online Users</div>
                 <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--color-primary-dark)', marginTop: 4 }}>
-                  ₹{metrics.total_platform_revenue.toLocaleString()}
+                  {metrics.online_users}
                 </div>
               </div>
             </div>

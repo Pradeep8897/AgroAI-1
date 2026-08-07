@@ -1,0 +1,25 @@
+{
+  "name": "agroai-e2e-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:selenium": "node tests/selenium-web-tests.js",
+    "test:appium": "node tests/appium-android-tests.js",
+    "test:api": "node tests/unit-tests-api.js",
+    "test:validation": "node tests/validation-tests.js",
+    "test:deployment": "node tests/deployment-status.js",
+    "test:load": "node tests/load-testing-performance.js",
+    "test:compile": "node tests/compile-master-report.js",
+    "test:all": "node tests/selenium-web-tests.js && node tests/appium-android-tests.js && node tests/unit-tests-api.js && node tests/validation-tests.js && node tests/deployment-status.js && node tests/load-testing-performance.js && node tests/compile-master-report.js"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "node-fetch": "^3.3.2",
+    "selenium-webdriver": "^4.20.0",
+    "webdriverio": "^8.36.0"
+  },
+  "devDependencies": {
+    "chromedriver": "^124.0.0"
+  }
+}

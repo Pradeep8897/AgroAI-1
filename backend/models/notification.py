@@ -1,6 +1,8 @@
 import random
 from datetime import datetime
 
+from models.orm_models import Notification
+
 class NotificationModel:
     @staticmethod
     def get_active_alerts(user_id=None):

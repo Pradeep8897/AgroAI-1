@@ -47,6 +47,8 @@ test_verification_report.txt
 # Local test artifacts
 appium-tests/test-results/
 selenium-tests/test-results/
+e2e-tests/test-results/
+e2e-tests/node_modules/
 
 # Android local build state
 android/.gradle/

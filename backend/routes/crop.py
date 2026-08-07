@@ -58,7 +58,7 @@ def calculate_suitability(inputs, profile):
 def recommend_crop():
     data = request.get_json() or {}
     try:
-        user_id = data.get('user_id', 0)
+        user_id = data.get('user_id')
         N = float(data.get('N', 0))
         P = float(data.get('P', 0))
         K = float(data.get('K', 0))
@@ -248,7 +248,7 @@ def get_calendar():
 
 @crop_bp.route('/api/crop/history', methods=['GET'])
 def get_crop_history():
-    user_id = request.args.get('user_id', 0)
+    user_id = request.args.get('user_id')
     history = CropModel.get_history_by_user(user_id)
     return jsonify({
         "success": True,

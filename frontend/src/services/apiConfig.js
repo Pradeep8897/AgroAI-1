@@ -38,14 +38,19 @@ export const getApiBase = () => {
   if (navigator.userAgent.includes('AgroAI-Android')) {
     return 'https://agroai-9ibe.onrender.com/api';
   }
+
+  // 4. Fourth priority: Local development fallback when running the frontend locally
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || import.meta.env.DEV) {
+    return 'http://127.0.0.1:5000/api';
+  }
   
-  // 4. Fourth priority: Fallback for development server environment variables
+  // 5. Fifth priority: Fallback for development server environment variables
   const envBase = import.meta.env.VITE_API_BASE;
   if (envBase) {
     return ensureApiSuffix(envBase);
   }
   
-  // 5. Ultimate default fallback
+  // 6. Ultimate default fallback
   return 'https://agroai-9ibe.onrender.com/api';
 };
 

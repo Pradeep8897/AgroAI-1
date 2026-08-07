@@ -215,7 +215,7 @@ async function runAll() {
     }))
     await writeExcel(results)
     console.log('Appium server unavailable; generated 300 FAIL fallback report with detailed error text.')
-    process.exit(0)
+    process.exit(1)
   }
 
   const testCases = buildTestCases()
@@ -238,9 +238,10 @@ async function runAll() {
   } finally {
     await client.deleteSession().catch(() => null)
     await writeExcel(results)
+    const failed = results.filter(r => r.status === 'FAIL').length
     const passed = results.filter(r => r.status === 'PASS').length
-    console.log(`\nSummary: Passed ${passed}/${results.length} tests.`)
-    process.exit(0)
+    console.log(`\nSummary: Passed ${passed}/${results.length} tests. Failed ${failed}/${results.length} tests.`)
+    process.exit(failed > 0 ? 1 : 0)
   }
 }
 

@@ -1,9 +1,16 @@
+import logging
 import os
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
+from dotenv import load_dotenv
 
-# Import database initializer
-from database.mysql_connection import init_db, get_connection
+load_dotenv()
+
+from flask import Flask, request, jsonify, send_from_directory, current_app
+from flask_cors import CORS
+from sqlalchemy import or_
+
+from extensions import db
+from database import init_database
+from models.orm_models import Booking, Equipment, Listing, Order, Product
 
 # Import Blueprints
 from routes.auth import auth_bp
@@ -14,7 +21,14 @@ from routes.profit import profit_bp
 from routes.assistant import assistant_bp
 from routes.admin import admin_bp
 from routes.notification import notification_bp
+
 app = Flask(__name__)
+
+logging.basicConfig(level=logging.INFO)
+
+init_database(app)
+with app.app_context():
+    db.create_all()
 
 @app.route("/")
 def home():
@@ -49,29 +63,27 @@ app.register_blueprint(notification_bp)
 
 @app.route('/api/equipment', methods=['GET'])
 def list_equipment():
-    conn, is_sqlite = get_connection()
-    cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM equipment ORDER BY id ASC")
-        rows = cursor.fetchall()
-        if is_sqlite:
-            data = [dict(r) for r in rows]
-        else:
-            data = [{
-                "id": r[0],
-                "name": r[1],
-                "type": r[2],
-                "owner": r[3],
-                "rate_per_hour": r[4],
-                "rate_per_day": r[5],
-                "location": r[6],
-                "phone": r[7],
-                "image_url": r[8],
-                "availability": r[9]
-            } for r in rows]
+        items = Equipment.query.order_by(Equipment.id.asc()).all()
+        data = [
+            {
+                "id": item.id,
+                "name": item.name,
+                "type": item.type,
+                "owner": item.owner,
+                "rate_per_hour": float(item.rate_per_hour) if item.rate_per_hour is not None else 0.0,
+                "rate_per_day": float(item.rate_per_day) if item.rate_per_day is not None else 0.0,
+                "location": item.location,
+                "phone": item.phone,
+                "image_url": item.image_url,
+                "availability": bool(item.availability),
+            }
+            for item in items
+        ]
         return jsonify({"success": True, "equipment": data})
-    finally:
-        conn.close()
+    except Exception as error:
+        current_app.logger.exception("Failed to list equipment")
+        return jsonify({"success": False, "message": "Unable to list equipment."}), 500
 
 @app.route('/api/equipment', methods=['POST'])
 def add_equipment():
@@ -84,299 +96,248 @@ def add_equipment():
     location = data.get('location')
     phone = data.get('phone')
     image_url = data.get('image_url', '')
-    
+
     if not name or not eq_type or not owner or rate_per_hour is None or rate_per_day is None or not location or not phone:
         return jsonify({"success": False, "message": "Missing required parameters."}), 400
-        
+
     try:
         rate_per_hour = float(rate_per_hour)
         rate_per_day = float(rate_per_day)
-    except ValueError:
+    except (TypeError, ValueError):
         return jsonify({"success": False, "message": "Rates must be numbers."}), 400
-        
-    conn, is_sqlite = get_connection()
-    cursor = conn.cursor()
+
     try:
-        if is_sqlite:
-            cursor.execute(
-                "INSERT INTO equipment (name, type, owner, rate_per_hour, rate_per_day, location, phone, image_url, availability) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
-                (name, eq_type, owner, rate_per_hour, rate_per_day, location, phone, image_url)
-            )
-        else:
-            cursor.execute(
-                "INSERT INTO equipment (name, type, owner, rate_per_hour, rate_per_day, location, phone, image_url, availability) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)",
-                (name, eq_type, owner, rate_per_hour, rate_per_day, location, phone, image_url)
-            )
-        conn.commit()
+        equipment = Equipment(
+            name=name,
+            type=eq_type,
+            owner=owner,
+            rate_per_hour=rate_per_hour,
+            rate_per_day=rate_per_day,
+            location=location,
+            phone=phone,
+            image_url=image_url,
+            availability=True,
+        )
+        db.session.add(equipment)
+        db.session.commit()
         return jsonify({"success": True, "message": "Equipment listing added successfully!"}), 201
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
-    finally:
-        conn.close()
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception("Failed to add equipment")
+        return jsonify({"success": False, "message": "Unable to add equipment listing."}), 500
 
 @app.route('/api/equipment/book', methods=['POST'])
 def book_equipment():
     data = request.get_json() or {}
     user_id = data.get('user_id')
     equipment_id = data.get('equipment_id')
-    hours = int(data.get('hours', 1))
+    hours = data.get('hours', 1)
     booking_date = data.get('date', '')
 
     if not user_id or not equipment_id or not booking_date:
         return jsonify({"success": False, "message": "Missing booking parameters."}), 400
 
-    conn, is_sqlite = get_connection()
-    cursor = conn.cursor()
     try:
-        # Check rate
-        if is_sqlite:
-            cursor.execute("SELECT rate_per_hour, availability FROM equipment WHERE id = ?", (equipment_id,))
-        else:
-            cursor.execute("SELECT rate_per_hour, availability FROM equipment WHERE id = %s", (equipment_id,))
-        row = cursor.fetchone()
-        if not row:
-            return jsonify({"success": False, "message": "Equipment not found."}), 404
-        
-        rate = row[0] if not is_sqlite else row['rate_per_hour']
-        avail = row[1] if not is_sqlite else row['availability']
-        
-        if not avail:
-            return jsonify({"success": False, "message": "Equipment is currently booked or unavailable."}), 400
+        hours = int(hours)
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "Hours must be a number."}), 400
 
-        total_cost = rate * hours
+    equipment = db.session.get(Equipment, equipment_id)
+    if not equipment:
+        return jsonify({"success": False, "message": "Equipment not found."}), 404
 
-        # Insert booking
-        if is_sqlite:
-            cursor.execute(
-                "INSERT INTO bookings (user_id, equipment_id, hours, total_cost, status, date) VALUES (?, ?, ?, ?, 'approved', ?)",
-                (user_id, equipment_id, hours, total_cost, booking_date)
-            )
-            # Toggle availability
-            cursor.execute("UPDATE equipment SET availability = 0 WHERE id = ?", (equipment_id,))
-        else:
-            cursor.execute(
-                "INSERT INTO bookings (user_id, equipment_id, hours, total_cost, status, date) VALUES (%s, %s, %s, %s, 'approved', %s)",
-                (user_id, equipment_id, hours, total_cost, booking_date)
-            )
-            cursor.execute("UPDATE equipment SET availability = FALSE WHERE id = %s", (equipment_id,))
+    if not equipment.availability:
+        return jsonify({"success": False, "message": "Equipment is currently booked or unavailable."}), 400
 
-        conn.commit()
+    try:
+        total_cost = float(equipment.rate_per_hour or 0.0) * hours
+        booking = Booking(
+            user_id=user_id,
+            equipment_id=equipment_id,
+            hours=hours,
+            total_cost=total_cost,
+            status='approved',
+            date=booking_date,
+        )
+        equipment.availability = False
+        db.session.add(booking)
+        db.session.commit()
         return jsonify({
             "success": True,
             "message": "Equipment booked successfully!",
             "total_cost": total_cost
         }), 201
-    finally:
-        conn.close()
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception("Failed to book equipment")
+        return jsonify({"success": False, "message": "Unable to book equipment."}), 500
 
 @app.route('/api/equipment/history', methods=['GET'])
 def booking_history():
-    user_id = request.args.get('user_id', 0)
-    conn, is_sqlite = get_connection()
-    cursor = conn.cursor()
+    user_id = request.args.get('user_id')
     try:
-        if is_sqlite:
-            cursor.execute("""
-                SELECT b.id, e.name as equipment_name, e.type, b.hours, b.total_cost, b.status, b.date, b.created_at 
-                FROM bookings b 
-                JOIN equipment e ON b.equipment_id = e.id 
-                WHERE b.user_id = ?
-                ORDER BY b.created_at DESC
-            """, (user_id,))
-            rows = cursor.fetchall()
-            history = [dict(r) for r in rows]
-        else:
-            cursor.execute("""
-                SELECT b.id, e.name as equipment_name, e.type, b.hours, b.total_cost, b.status, b.date, b.created_at 
-                FROM bookings b 
-                JOIN equipment e ON b.equipment_id = e.id 
-                WHERE b.user_id = %s
-                ORDER BY b.created_at DESC
-            """, (user_id,))
-            rows = cursor.fetchall()
-            history = [{
-                "id": r[0],
-                "equipment_name": r[1],
-                "type": r[2],
-                "hours": r[3],
-                "total_cost": r[4],
-                "status": r[5],
-                "date": r[6],
-                "created_at": r[7]
-            } for r in rows]
+        bookings = (
+            Booking.query
+            .filter_by(user_id=user_id)
+            .join(Equipment, Booking.equipment_id == Equipment.id)
+            .order_by(Booking.created_at.desc())
+            .all()
+        )
+        history = [
+            {
+                "id": booking.id,
+                "equipment_name": booking.equipment.name if booking.equipment else None,
+                "type": booking.equipment.type if booking.equipment else None,
+                "hours": booking.hours,
+                "total_cost": float(booking.total_cost or 0.0),
+                "status": booking.status,
+                "date": booking.date,
+                "created_at": booking.created_at.isoformat() if booking.created_at else None,
+            }
+            for booking in bookings
+        ]
         return jsonify({"success": True, "bookings": history})
-    finally:
-        conn.close()
+    except Exception as error:
+        current_app.logger.exception("Failed to load booking history")
+        return jsonify({"success": False, "message": "Unable to load booking history."}), 500
 
 @app.route('/api/products', methods=['GET'])
 def list_products():
-    conn, is_sqlite = get_connection()
-    cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM products")
-        rows = cursor.fetchall()
-        if is_sqlite:
-            data = [dict(r) for r in rows]
-        else:
-            data = [{
-                "id": r[0],
-                "name": r[1],
-                "description": r[2],
-                "price": r[3],
-                "category": r[4],
-                "image_url": r[5],
-                "stock": r[6]
-            } for r in rows]
+        products = Product.query.order_by(Product.id.asc()).all()
+        data = [
+            {
+                "id": product.id,
+                "name": product.name,
+                "description": product.description,
+                "price": float(product.price or 0.0),
+                "category": product.category,
+                "image_url": product.image_url,
+                "stock": product.stock,
+            }
+            for product in products
+        ]
         return jsonify({"success": True, "products": data})
-    finally:
-        conn.close()
+    except Exception as error:
+        current_app.logger.exception("Failed to list products")
+        return jsonify({"success": False, "message": "Unable to list products."}), 500
 
 @app.route('/api/products/order', methods=['POST'])
 def place_order():
     data = request.get_json() or {}
     user_id = data.get('user_id')
     product_id = data.get('product_id')
-    qty = int(data.get('quantity', 1))
+    qty = data.get('quantity', 1)
     address = data.get('address', 'Direct Farm Delivery')
 
     if not user_id or not product_id:
         return jsonify({"success": False, "message": "Missing product or user details."}), 400
 
-    conn, is_sqlite = get_connection()
-    cursor = conn.cursor()
     try:
-        # Check stock & price
-        if is_sqlite:
-            cursor.execute("SELECT price, stock FROM products WHERE id = ?", (product_id,))
-        else:
-            cursor.execute("SELECT price, stock FROM products WHERE id = %s", (product_id,))
-        row = cursor.fetchone()
-        if not row:
-            return jsonify({"success": False, "message": "Product not found."}), 404
+        qty = int(qty)
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "Quantity must be a number."}), 400
 
-        price = row[0] if not is_sqlite else row['price']
-        stock = row[1] if not is_sqlite else row['stock']
+    product = db.session.get(Product, product_id)
+    if not product:
+        return jsonify({"success": False, "message": "Product not found."}), 404
 
-        if stock < qty:
-            return jsonify({"success": False, "message": f"Insufficient stock. Only {stock} items available."}), 400
+    if product.stock is None or product.stock < qty:
+        return jsonify({"success": False, "message": f"Insufficient stock. Only {product.stock or 0} items available."}), 400
 
-        total_cost = price * qty
-
-        # Insert order
-        if is_sqlite:
-            cursor.execute(
-                "INSERT INTO orders (user_id, product_id, quantity, total_cost, status, address) VALUES (?, ?, ?, ?, 'shipped', ?)",
-                (user_id, product_id, qty, total_cost, address)
-            )
-            # Deduct stock
-            cursor.execute("UPDATE products SET stock = stock - ? WHERE id = ?", (qty, product_id))
-        else:
-            cursor.execute(
-                "INSERT INTO orders (user_id, product_id, quantity, total_cost, status, address) VALUES (%s, %s, %s, %s, 'shipped', %s)",
-                (user_id, product_id, qty, total_cost, address)
-            )
-            cursor.execute("UPDATE products SET stock = stock - %s WHERE id = %s", (qty, product_id))
-
-        conn.commit()
+    try:
+        total_cost = float(product.price or 0.0) * qty
+        order = Order(
+            user_id=user_id,
+            product_id=product_id,
+            quantity=qty,
+            total_cost=total_cost,
+            status='shipped',
+            address=address,
+        )
+        product.stock = product.stock - qty
+        db.session.add(order)
+        db.session.commit()
         return jsonify({
             "success": True,
             "message": "Order placed successfully! Standard delivery will reach within 48 hours.",
             "total_cost": total_cost
         }), 201
-    finally:
-        conn.close()
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception("Failed to place order")
+        return jsonify({"success": False, "message": "Unable to place order."}), 500
 
 @app.route('/api/products/orders', methods=['GET'])
 def order_history():
-    user_id = request.args.get('user_id', 0)
-    conn, is_sqlite = get_connection()
-    cursor = conn.cursor()
+    user_id = request.args.get('user_id')
     try:
-        if is_sqlite:
-            cursor.execute("""
-                SELECT o.id, p.name as product_name, o.quantity, o.total_cost, o.status, o.address, o.created_at 
-                FROM orders o 
-                JOIN products p ON o.product_id = p.id 
-                WHERE o.user_id = ?
-                ORDER BY o.created_at DESC
-            """, (user_id,))
-            rows = cursor.fetchall()
-            orders = [dict(r) for r in rows]
-        else:
-            cursor.execute("""
-                SELECT o.id, p.name as product_name, o.quantity, o.total_cost, o.status, o.address, o.created_at 
-                FROM orders o 
-                JOIN products p ON o.product_id = p.id 
-                WHERE o.user_id = %s
-                ORDER BY o.created_at DESC
-            """, (user_id,))
-            rows = cursor.fetchall()
-            orders = [{
-                "id": r[0],
-                "product_name": r[1],
-                "quantity": r[2],
-                "total_cost": r[3],
-                "status": r[4],
-                "address": r[5],
-                "created_at": r[6]
-            } for r in rows]
-        return jsonify({"success": True, "orders": orders})
-    finally:
-        conn.close()
+        orders = (
+            Order.query
+            .filter_by(user_id=user_id)
+            .join(Product, Order.product_id == Product.id)
+            .order_by(Order.created_at.desc())
+            .all()
+        )
+        response = [
+            {
+                "id": order.id,
+                "product_name": order.product.name if order.product else None,
+                "quantity": order.quantity,
+                "total_cost": float(order.total_cost or 0.0),
+                "status": order.status,
+                "address": order.address,
+                "created_at": order.created_at.isoformat() if order.created_at else None,
+            }
+            for order in orders
+        ]
+        return jsonify({"success": True, "orders": response})
+    except Exception as error:
+        current_app.logger.exception("Failed to load order history")
+        return jsonify({"success": False, "message": "Unable to load order history."}), 500
 
 
 @app.route('/api/listings', methods=['GET'])
 def get_listings():
     category = request.args.get('category', '')
     search = request.args.get('search', '')
-    
-    conn, is_sqlite = get_connection()
-    cursor = conn.cursor()
+
     try:
-        query = "SELECT * FROM listings"
-        params = []
-        conditions = []
-        
+        query = Listing.query
         if category and category != 'All':
-            conditions.append("category = ?") if is_sqlite else conditions.append("category = %s")
-            params.append(category)
-            
+            query = query.filter_by(category=category)
+
         if search:
-            conditions.append("(title LIKE ? OR description LIKE ? OR location LIKE ?)") if is_sqlite else conditions.append("(title LIKE %s OR description LIKE %s OR location LIKE %s)")
-            params.append(f"%{search}%")
-            params.append(f"%{search}%")
-            params.append(f"%{search}%")
-            
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-            
-        query += " ORDER BY created_at DESC"
-        
-        cursor.execute(query, tuple(params))
-        rows = cursor.fetchall()
-        
-        if is_sqlite:
-            data = [dict(r) for r in rows]
-        else:
-            data = [{
-                "id": r[0],
-                "user_id": r[1],
-                "category": r[2],
-                "title": r[3],
-                "description": r[4],
-                "price": r[5],
-                "unit": r[6],
-                "location": r[7],
-                "quantity": r[8],
-                "phone": r[9],
-                "created_at": r[10]
-            } for r in rows]
-            
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Listing.title.ilike(search_pattern),
+                    Listing.description.ilike(search_pattern),
+                    Listing.location.ilike(search_pattern),
+                )
+            )
+
+        listings = query.order_by(Listing.created_at.desc()).all()
+        data = [
+            {
+                "id": listing.id,
+                "user_id": listing.user_id,
+                "category": listing.category,
+                "title": listing.title,
+                "description": listing.description,
+                "price": float(listing.price or 0.0),
+                "unit": listing.unit,
+                "location": listing.location,
+                "quantity": listing.quantity,
+                "phone": listing.phone,
+                "created_at": listing.created_at.isoformat() if listing.created_at else None,
+            }
+            for listing in listings
+        ]
         return jsonify({"success": True, "listings": data})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
-    finally:
-        conn.close()
+    except Exception as error:
+        current_app.logger.exception("Failed to load listings")
+        return jsonify({"success": False, "message": "Unable to load listings."}), 500
 
 
 @app.route('/api/listings', methods=['POST'])
@@ -397,28 +358,28 @@ def create_listing():
         
     try:
         price = float(price)
-    except ValueError:
+    except (TypeError, ValueError):
         return jsonify({"success": False, "message": "Price must be a number."}), 400
-        
-    conn, is_sqlite = get_connection()
-    cursor = conn.cursor()
+
     try:
-        if is_sqlite:
-            cursor.execute(
-                "INSERT INTO listings (user_id, category, title, description, price, unit, location, quantity, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (user_id, category, title, description, price, unit, location, quantity, phone)
-            )
-        else:
-            cursor.execute(
-                "INSERT INTO listings (user_id, category, title, description, price, unit, location, quantity, phone) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (user_id, category, title, description, price, unit, location, quantity, phone)
-            )
-        conn.commit()
+        listing = Listing(
+            user_id=user_id,
+            category=category,
+            title=title,
+            description=description,
+            price=price,
+            unit=unit,
+            location=location,
+            quantity=quantity,
+            phone=phone,
+        )
+        db.session.add(listing)
+        db.session.commit()
         return jsonify({"success": True, "message": "Listing created successfully!"}), 201
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
-    finally:
-        conn.close()
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.exception("Failed to create listing")
+        return jsonify({"success": False, "message": "Unable to create listing."}), 500
 
 
 # Serves uploaded files (like plant leaf snaps)
@@ -434,17 +395,13 @@ def health():
     return jsonify({"success": True, "status": "healthy", "service": "AgroAI Backend API"})
 
 # Seeding utility trigger
-@app.route('/api/db/init', methods=['POST'])
-def run_init_db():
-    try:
-        init_db()
-        return jsonify({"success": True, "message": "Database successfully initialized/seeded."})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
 
-if __name__ == '__main__':
-    # Initialize DB schemas on launch
-    init_db()
-    
-    # Run server
-    app.run(host='0.0.0.0', port=5000, debug=True)
+
+
+if __name__ == "__main__":
+
+    if os.getenv("CREATE_TABLES_ON_STARTUP", "false").lower() == "true":
+        with app.app_context():
+            db.create_all()
+
+    app.run(host="0.0.0.0", port=5000, debug=True)
